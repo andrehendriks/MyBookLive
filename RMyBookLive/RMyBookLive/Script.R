@@ -16,7 +16,6 @@ if (!require("RevoScaleR")) {
 }
 
 # Initial some variables.
-# github
 inputFileFlight <- paste0("/datasets/Flight_Delays_Sample.csv")
 inputFileWeather <- paste0("/datasets/Weather_Sample.csv")
 
