@@ -1,5 +1,3 @@
-## Flight Delay Prediction with Microsoft R Server
-
 ### Step 0: Get Started
 
 # Check if Microsoft R Server (RRE 8.0) is installed.
@@ -16,117 +14,105 @@ if (!require("RevoScaleR")) {
 }
 
 # Initial some variables.
-inputFileFlight <- paste0("datasets/Flight_Delays_Sample.csv")
-inputFileWeather <- paste0("datasets/Weather_Sample.csv")
+# github
+loadFile <- paste0("datasets/ldeaths_Sample.csv")
+loadFile <- paste0("datasets/mdeaths_Sample.csv")
 
 # Create a temporary directory to store the intermediate .xdf files.
-td <- tempdir()
-outFileFlight <- paste0(td, "/flight.xdf")
-outFileWeather <- paste0(td, "/weather.xdf")
-outFileOrigin <- paste0(td, "/originData.xdf")
-outFileDest <- paste0(td, "/destData.xdf")
-outFileFinal <- paste0(td, "/finalData.xdf")
+td <- tempdir() 
+outFileldeaths <- paste0(td, "/ldeaths.xdf");
+outFilemdeaths <- paste0(td, "/mdeaths.xdf");
+outFileOrigin <- paste0(td, "/originData.xdf");
+outFileDest <- paste0(td, "/destData.xdf");
+outFileFinal <- paste0(td, "/finalData.xdf");
 
 
 ### Step 1: Import Data
 
 # Import the flight data.
-flight_mrs <- rxImport(
-  inData = inputFileFlight, outFile = outFileFlight,
+ldeaths_mrs <- rxImport(
+  inData = paste0("datasets/ldeaths_Sample.csv"), outFile = outFileldeaths,
   missingValueString = "M", stringsAsFactors = FALSE,
 # Remove columns that are possible target leakers from the flight data.
-  varsToDrop = c("DepDelay", "DepDel15", "ArrDelay", "Cancelled", "Year"),
+  varsToDrop = c("RowNum"),
 # Define "Carrier" as categorical.
-  colInfo = list(Carrier = list(type = "factor")),
+  colInfo = list(x = list(type = "factor")),
 # Round down scheduled departure time to full hour.
-  transforms = list(CRSDepTime = floor(CRSDepTime / 100)),
+#  transforms = list(CRSDepTime = floor(CRSDepTime / 100)),
   overwrite = TRUE
 )
 
 # Review the first 6 rows of flight data.
-head(flight_mrs)
+head(ldeaths_mrs)
 
 # Summary the flight data.
-rxSummary(~., data = flight_mrs, blocksPerRead = 2)
+rxSummary(~., data = ldeaths_mrs, blocksPerRead = 2)
 
 # Import the weather data.
 xform <- function(dataList) {
     # Create a function to normalize some numerical features.
     featureNames <- c(
-  "Visibility",
-  "DryBulbCelsius",
-  "DewPointCelsius",
-  "RelativeHumidity",
-  "WindSpeed",
-  "Altimeter"
+  "x"
   )
     dataList[featureNames] <- lapply(dataList[featureNames], scale)
     return(dataList)
 }
 
-weather_mrs <- rxImport(
-  inData = inputFileWeather, outFile = outFileWeather,
+mdeaths_mrs <- rxImport(
+  inData = paste0("datasets/mdeaths_Sample.csv"), outFile = outFilemdeaths,
   missingValueString = "M", stringsAsFactors = FALSE,
 # Eliminate some features due to redundance.
-  varsToDrop = c("Year", "Timezone",
-                 "DryBulbFarenheit", "DewPointFarenheit"),
+  varsToDrop = c("RowNum"),
 # Create a new column "DestAirportID" in weather data.
-  transforms = list(DestAirportID = AirportID),
+  transforms = list(x = x),
 # Apply the normalization function.
   transformFunc = xform,
   transformVars = c(
-    "Visibility",
-    "DryBulbCelsius",
-    "DewPointCelsius",
-    "RelativeHumidity",
-    "WindSpeed",
-    "Altimeter"
+    "x"
     ),
   overwrite = TRUE
 )
 
 # Review the variable information of weather data.
-rxGetVarInfo(weather_mrs)
+rxGetVarInfo(mdeaths_mrs)
 
 
 ### Step 2: Pre-process Data
 
 # Rename some column names in the weather data to prepare it for merging.
 newVarInfo <- list(
-  AdjustedMonth = list(newName = "Month"),
-  AdjustedDay = list(newName = "DayofMonth"),
-  AirportID = list(newName = "OriginAirportID"),
-  AdjustedHour = list(newName = "CRSDepTime")
+  x = list(newName = "deaths")
 )
-rxSetVarInfo(varInfo = newVarInfo, data = weather_mrs)
+rxSetVarInfo(varInfo = newVarInfo, data = mdeaths_mrs)
 
 # Concatenate/Merge flight records and weather data.
 # 1). Join flight records and weather data at origin of the flight 
 #     (OriginAirportID).
 originData_mrs <- rxMerge(
-  inData1 = flight_mrs, inData2 = weather_mrs, outFile = outFileOrigin,
+  inData1 = ldeaths_mrs, inData2 = mdeaths_mrs, outFile = outFileOrigin,
   type = "inner", autoSort = TRUE,
-  matchVars = c("Month", "DayofMonth", "OriginAirportID", "CRSDepTime"),
-  varsToDrop2 = "DestAirportID",
+  matchVars = c("deaths","deaths"),
+  varsToDrop2 = "RowNum",
   overwrite = TRUE
 )
 
 # 2). Join flight records and weather data using the destination of 
 #     the flight (DestAirportID).
 destData_mrs <- rxMerge(
-  inData1 = originData_mrs, inData2 = weather_mrs, outFile = outFileDest,
+  inData1 = originData_mrs, inData2 = mdeaths_mrs, outFile = outFileDest,
   type = "inner", autoSort = TRUE,
-  matchVars = c("Month", "DayofMonth", "DestAirportID", "CRSDepTime"),
-  varsToDrop2 = c("OriginAirportID"),
-  duplicateVarExt = c("Origin", "Destination"),
+  matchVars = c("deaths","deaths"),
+  varsToDrop2 = c("RowNum"),
+  duplicateVarExt = c("deaths","deaths"),
   overwrite = TRUE
 )
 
 # Call "rxFactors" function to convert "OriginAirportID" and 
 # "DestAirportID" as categorical.
 rxFactors(inData = destData_mrs, outFile = outFileFinal, sortLevels = TRUE,
-          factorInfo = c("OriginAirportID", "DestAirportID"),
+          factorInfo = c("deaths", "deaths"),
           overwrite = TRUE)
+
 
 
 ### Step 3: Prepare Training and Test Datasets
@@ -154,7 +140,7 @@ test <- RxXdfData(paste0(td, "/modelData.splitVar.Test.xdf"))
 ### Step 4A: Choose and apply a learning algorithm (Logistic Regression)
 
 # Build the formula.
-modelFormula <- formula(train, depVars = "ArrDel15",
+modelFormula <- formula(train, depVars = "deaths",
                         varsToDrop = c("RowNum", "splitVar"))
 
 # Fit a Logistic Regression model.
@@ -169,15 +155,15 @@ summary(logitModel_mrs)
 # Predict the probability on the test dataset.
 rxPredict(logitModel_mrs, data = test,
           type = "response",
-          predVarNames = "ArrDel15_Pred_Logit",
+          predVarNames = "deaths_Pred_Logit",
           overwrite = TRUE)
 
 # Calculate Area Under the Curve (AUC).
 paste0("AUC of Logistic Regression Model:",
-      rxAuc(rxRoc("ArrDel15", "ArrDel15_Pred_Logit", test)))
+      rxAuc(rxRoc("deaths", "deaths_Pred_Logit", test)))
 
 # Plot the ROC curve.
-rxRocCurve("ArrDel15", "ArrDel15_Pred_Logit", data = test,
+rxRocCurve("deaths", "deaths_Pred_Logit", data = test,
            title = "ROC curve - Logistic regression")
 
 
@@ -197,15 +183,15 @@ dTree2_mrs <- prune.rxDTree(dTree1_mrs, cp = treeCp_mrs)
 
 # Predict the probability on the test dataset.
 rxPredict(dTree2_mrs, data = test,
-          predVarNames = "ArrDel15_Pred_Tree",
+          predVarNames = "deaths_Pred_Tree",
           overwrite = TRUE)
 
 # Calculate Area Under the Curve (AUC).
 paste0("AUC of Decision Tree Model:",
-       rxAuc(rxRoc(" ArrDel15 ", " ArrDel15_Pred_Tree ", test)))
+       rxAuc(rxRoc(" deaths ", " deaths_Pred_Tree ", test)))
 
 # Plot the ROC curve.
-rxRocCurve("ArrDel15",
-           predVarNames = c("ArrDel15_Pred_Tree", "ArrDel15_Pred_Logit"),
+rxRocCurve("deaths",
+           predVarNames = c("deaths_Pred_Tree", "deaths_Pred_Logit"),
            data = test,
            title = "ROC curve - Logistic regression")
