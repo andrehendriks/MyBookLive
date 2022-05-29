@@ -209,3 +209,4 @@ rxRocCurve("ArrDel15",
            predVarNames = c("ArrDel15_Pred_Tree", "ArrDel15_Pred_Logit"),
            data = test,
            title = "ROC curve - Logistic regression")
+
